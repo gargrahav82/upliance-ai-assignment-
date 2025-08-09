@@ -170,6 +170,8 @@ const CreateForm: React.FC = () => {
 
         <button onClick={addField} className="btn btn-add">➕ Add Field</button>
       </div>
+      <h3 style={{ marginTop: 20 }}>Fields</h3>
+<p className="drag-hint">💡 Tip: Drag and drop fields to rearrange their order.</p>
 
       {/* Fields List with Drag & Drop */}
       <DragDropContext onDragEnd={onDragEnd}>
