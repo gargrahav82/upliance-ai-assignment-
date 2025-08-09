@@ -1,13 +1,19 @@
-
-// src/components/MyForms.tsx
+// src/components/FormsList.tsx
 import React from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { Link } from "react-router-dom";
 import { RootState } from "../redux-states/store";
+import { deleteForm } from "../redux-states/slices/formSlices";
 
-const MyForms = () => {
-  // Get saved forms from Redux (already loaded from localStorage)
+const FormsList: React.FC = () => {
   const savedForms = useSelector((state: RootState) => state.forms.savedForms);
+  const dispatch = useDispatch();
+
+  const handleDelete = (id: string) => {
+    if (window.confirm("Are you sure you want to delete this form?")) {
+      dispatch(deleteForm(id));
+    }
+  };
 
   if (!savedForms || savedForms.length === 0) {
     return <h3 style={{ textAlign: "center" }}>No forms saved yet.</h3>;
@@ -21,7 +27,7 @@ const MyForms = () => {
           width: "100%",
           borderCollapse: "collapse",
           marginTop: 12,
-          border: "1px solid #ccc"
+          border: "1px solid #ccc",
         }}
       >
         <thead>
@@ -36,12 +42,20 @@ const MyForms = () => {
             <tr key={form.id}>
               <td style={{ padding: 8, border: "1px solid #ccc" }}>{form.name}</td>
               <td style={{ padding: 8, border: "1px solid #ccc" }}>
-                {new Date().toLocaleDateString()}
+                {form.createdAt
+                  ? new Date(form.createdAt).toLocaleString()
+                  : "N/A"}
               </td>
               <td style={{ padding: 8, border: "1px solid #ccc" }}>
                 <Link to={`/preview/${form.id}`}>
-                  <button>Preview</button>
+                  <button style={{ marginRight: 8 }}>Preview</button>
                 </Link>
+                <button
+                  onClick={() => handleDelete(form.id)}
+                  style={{ background: "red", color: "white", border: "none", padding: "4px 8px", cursor: "pointer" }}
+                >
+                  Delete
+                </button>
               </td>
             </tr>
           ))}
@@ -51,4 +65,4 @@ const MyForms = () => {
   );
 };
 
-export default MyForms;
+export default FormsList;

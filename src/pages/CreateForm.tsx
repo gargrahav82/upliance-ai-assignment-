@@ -1,591 +1,296 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Container,
-  Typography,
-  TextField,
-  Button,
-  MenuItem,
-  Box,
-  List,
-  ListItem,
-  IconButton,
-  Checkbox,
-  FormControlLabel,
-  Paper,
-  Autocomplete,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-} from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import { useDispatch } from 'react-redux';
-import { saveForm as saveFormAction } from '../redux-states/slices/formSlices';
-
+import React, { useState } from "react";
+import { useDispatch } from "react-redux";
+import { saveForm, FieldType, Field } from "../redux-states/slices/formSlices";
+import { useNavigate } from "react-router-dom";
 import {
   DragDropContext,
   Droppable,
   Draggable,
-  DropResult,
-} from '@hello-pangea/dnd';
+  DropResult
+} from "@hello-pangea/dnd";
+import "./CreateForm.css";
 
-import { create, all } from 'mathjs';
-import { Link } from 'react-router-dom';
-const math = create(all, {});
-
-// Types
-
-type FieldType = 'text' | 'number' | 'date' | 'checkbox' | 'derived';
-
-interface Validations {
-  minLength?: number;
-  maxLength?: number;
-  isEmail?: boolean;
-  isPasswordRule?: boolean;
-  min?: number | string;
-  max?: number | string;
-}
-
-interface Field {
-  id: string;
-  label: string;
-  fieldType: FieldType;
-  required: boolean;
-  defaultValue?: string | number | boolean;
-  validations?: Validations;
-  // Derived field properties
-  isDerived?: boolean;
-  parentFieldIds?: string[];
-  formula?: string;
-}
-
-// Constants
 const fieldTypes: { value: FieldType; label: string }[] = [
-  { value: 'text', label: 'Text' },
-  { value: 'number', label: 'Number' },
-  { value: 'date', label: 'Date' },
-  { value: 'checkbox', label: 'Checkbox' },
-  { value: 'derived', label: 'Derived Field' },
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "date", label: "Date" },
+  { value: "checkbox", label: "Checkbox" },
+  { value: "textarea", label: "Textarea" },
+  { value: "radio", label: "Radio" }
 ];
 
 const CreateForm: React.FC = () => {
-  const [formName, setFormName] = useState('');
-  const [formId , setFormId] = useState<string>((Date.now()).toString())
-  const [fields, setFields] = useState<Field[]>([]);
-  const [newFieldType, setNewFieldType] = useState<FieldType>('text');
-  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const dispatch = useDispatch();
+  const navigate = useNavigate();
 
-  // Add new field handler
+  const [formName, setFormName] = useState("");
+  const [fields, setFields] = useState<Field[]>([]);
+  const [newFieldType, setNewFieldType] = useState<FieldType>("text");
+  const [newFieldOptions, setNewFieldOptions] = useState("");
+  const [newDefaultValue, setNewDefaultValue] = useState("");
+
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [createdFormId, setCreatedFormId] = useState("");
+
+  // -------- Add Field ----------
   const addField = () => {
+    const optionsArray =
+      newFieldType === "radio"
+        ? newFieldOptions.split(",").map(o => o.trim()).filter(Boolean)
+        : undefined;
+
     const newField: Field = {
       id: Date.now().toString(),
-      label: 'Untitled',
+      label: "Untitled",
       fieldType: newFieldType,
       required: false,
       defaultValue:
-        newFieldType === 'checkbox' ? false : newFieldType === 'number' ? 0 : '',
-      validations: {},
-      isDerived: newFieldType === 'derived',
-      parentFieldIds: newFieldType === 'derived' ? [] : undefined,
-      formula: newFieldType === 'derived' ? '' : undefined,
+        newFieldType === "checkbox"
+          ? false
+          : newFieldType === "radio"
+          ? ""
+          : newDefaultValue || "",
+      options: optionsArray,
+      minLength: undefined,
+      maxLength: undefined,
+      fieldSubtype: undefined,
+      pattern: undefined
     };
-    setFields((prev) => [...prev, newField]);
+    setFields(prev => [...prev, newField]);
+    setNewDefaultValue("");
+    setNewFieldOptions("");
   };
 
-  // Update field top-level property (label, required, defaultValue)
+  // -------- Update Field ----------
   const updateField = (id: string, key: keyof Field, value: any) => {
-    setFields((prev) =>
-      prev.map((field) => (field.id === id ? { ...field, [key]: value } : field))
+    setFields(prev =>
+      prev.map(f => (f.id === id ? { ...f, [key]: value } : f))
     );
   };
 
-  // Update validations nested object
-  const updateValidation = (id: string, key: keyof Validations, value: any) => {
-    setFields((prev) =>
-      prev.map((field) => {
-        if (field.id === id) {
-          return {
-            ...field,
-            validations: {
-              ...field.validations,
-              [key]: value,
-            },
-          };
-        }
-        return field;
-      })
-    );
-  };
-
-  // Update parent fields for derived
-  const updateParentFields = (id: string, parents: string[]) => {
-    setFields((prev) =>
-      prev.map((field) => (field.id === id ? { ...field, parentFieldIds: parents } : field))
-    );
-  };
-
-  // Update formula for derived field
-  const updateFormula = (id: string, formula: string) => {
-    setFields((prev) =>
-      prev.map((field) => (field.id === id ? { ...field, formula } : field))
-    );
-  };
-
-  // Delete field by id
+  // -------- Delete Field ----------
   const deleteField = (id: string) => {
-    setFields((prev) => prev.filter((field) => field.id !== id));
+    setFields(prev => prev.filter(f => f.id !== id));
   };
 
-  // Derived fields recalculation using mathjs on any related changes
- useEffect(() => {
-  setFields(prevFields => {
-    let updated = false;
-
-    const valuesMap: Record<string, any> = {};
-
-    prevFields.forEach((field) => {
-      if (!field.isDerived) {
-        if (field.fieldType === 'checkbox') {
-          valuesMap[field.id] = field.defaultValue ? 1 : 0;
-        } else if (field.fieldType === 'number') {
-          valuesMap[field.id] =
-            field.defaultValue !== '' && field.defaultValue !== undefined
-              ? Number(field.defaultValue)
-              : 0;
-        } else if (field.fieldType === 'date') {
-          const dateVal = field.defaultValue as string;
-          valuesMap[field.id] = dateVal ? new Date(dateVal).getTime() : 0;
-        } else {
-          valuesMap[field.id] = field.defaultValue || 0;
-        }
-      }
-    });
-
-    const newFields = prevFields.map(field => {
-      if (
-        field.isDerived &&
-        field.formula &&
-        field.parentFieldIds &&
-        field.parentFieldIds.length > 0
-      ) {
-        try {
-          const scope: Record<string, any> = {};
-          field.parentFieldIds.forEach(pid => {
-            scope[pid] = valuesMap[pid] ?? 0;
-          });
-          scope['now'] = Date.now();
-
-          const result = math.evaluate(field.formula, scope);
-
-          const newValue = result === undefined || result === null ? '' : result.toString();
-
-          if (field.defaultValue !== newValue) {
-            updated = true;
-            return { ...field, defaultValue: newValue };
-          }
-        } catch (e) {
-          if (field.defaultValue !== 'Formula error') {
-            updated = true;
-            return { ...field, defaultValue: 'Formula error' };
-          }
-        }
-      }
-      return field;
-    });
-
-    return updated ? newFields : prevFields;
-  });
-}, [fields]);
-
-useEffect(() => {
-  console.log('Fields changed:', fields);
-}, [fields]);
-
-  // Drag and drop handler
+  // -------- Drag & Drop reorder ----------
   const onDragEnd = (result: DropResult) => {
     if (!result.destination) return;
-
     const reordered = Array.from(fields);
-    const [removed] = reordered.splice(result.source.index, 1);
-    reordered.splice(result.destination.index, 0, removed);
-
+    const [moved] = reordered.splice(result.source.index, 1);
+    reordered.splice(result.destination.index, 0, moved);
     setFields(reordered);
   };
 
-  // Validation before saving (basic)
+  // -------- Validation ----------
   const validateForm = (): string | null => {
-    if (!formName.trim()) return 'Form name is required';
-    if (fields.length === 0) return 'Add at least one field';
+    if (!formName.trim()) return "Please enter a form name.";
+    if (!fields.length) return "Please add at least one field.";
 
-    // Additional validation can be added here
-
+    for (let i = 0; i < fields.length; i++) {
+  const field = fields[i];
+      if (!field.label.trim()) return `Field ${i + 1} is missing a label.`;
+      if (field.fieldType === "radio" && (!field.options || field.options.length < 2)) {
+        return `Radio field "${field.label}" must have at least 2 options.`;
+      }
+      if (field.minLength && field.maxLength && field.minLength > field.maxLength) {
+        return `Field "${field.label}" min length cannot exceed max length.`;
+      }
+      if (field.fieldSubtype === "password" && (!field.minLength || field.minLength < 8)) {
+        return `Password field "${field.label}" must have at least 8 characters.`;
+      }
+    }
     return null;
   };
 
-  // Save form handler
-  const saveForm = () => {
-    const error = validateForm();
-    if (error) {
-      alert(error);
+  // -------- Save ----------
+  const saveFormHandler = () => {
+    const err = validateForm();
+    if (err) {
+      alert(err);
       return;
     }
-    const formData = { formId , formName, fields };
-    dispatch(saveFormAction({ id : formId , name: formName, fields , createdAt : Date.now().toString() }));
+    const newId = Date.now().toString();
+    dispatch(
+      saveForm({
+        id: newId,
+        name: formName,
+        fields,
+        createdAt: new Date().toISOString()
+      })
+    );
+    setCreatedFormId(newId);
     setShowSuccessDialog(true);
-    console.log('Form saved:', formData);
-    alert('Form saved! Check console for details.');
   };
-
-  const handleCloseDialog = () => {
-    setShowSuccessDialog(false);
-  };
-
-  const parentFieldOptions = fields.filter(f => !f.isDerived && f.fieldType !== 'checkbox');
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 6 }}>
-      <Typography variant="h4" gutterBottom>
-        Create New Form
-      </Typography>
+    <div className="form-container">
+      <h2>Create New Form</h2>
 
       {/* Form Name */}
-      <TextField
-        label="Form Name"
-        fullWidth
-        margin="normal"
-        value={formName}
-        onChange={e => setFormName(e.target.value)}
-      />
+      <div style={{ marginBottom: 12 }}>
+        <label><strong>Form Name:</strong></label>
+        <input
+          type="text"
+          className="form-input"
+          value={formName}
+          onChange={e => setFormName(e.target.value)}
+        />
+      </div>
 
       {/* Add Field Controls */}
-      <Box display="flex" alignItems="center" gap={2} mb={3}>
-        <TextField
-          select
-          label="Field Type"
-          size="small"
+      <div className="add-field-controls">
+        <label>Field Type:</label>
+        <select
           value={newFieldType}
           onChange={e => setNewFieldType(e.target.value as FieldType)}
         >
-          {fieldTypes.map(({ value, label }) => (
-            <MenuItem key={value} value={value}>
-              {label}
-            </MenuItem>
+          {fieldTypes.map(ft => (
+            <option key={ft.value} value={ft.value}>{ft.label}</option>
           ))}
-        </TextField>
-        <Button variant="contained" onClick={addField}>
-          Add Field
-        </Button>
-      </Box>
+        </select>
 
-      {/* Fields List with Drag and Drop */}
+        {newFieldType !== "checkbox" && newFieldType !== "radio" && (
+          <input
+            type="text"
+            placeholder="Default Value"
+            value={newDefaultValue}
+            onChange={e => setNewDefaultValue(e.target.value)}
+          />
+        )}
+
+        {newFieldType === "radio" && (
+          <input
+            type="text"
+            placeholder="Options (comma separated)"
+            value={newFieldOptions}
+            onChange={e => setNewFieldOptions(e.target.value)}
+          />
+        )}
+
+        <button onClick={addField} className="btn btn-add">➕ Add Field</button>
+      </div>
+
+      {/* Fields List with Drag & Drop */}
       <DragDropContext onDragEnd={onDragEnd}>
-        <Droppable droppableId="droppable-fields">
+        <Droppable droppableId="fieldsList">
           {(provided : any) => (
             <div {...provided.droppableProps} ref={provided.innerRef}>
               {fields.map((field, index) => (
                 <Draggable key={field.id} draggableId={field.id} index={index}>
-                  {(provided : any, snapshot : any) => (
-                    <Paper
-                      elevation={snapshot.isDragging ? 6 : 1}
+                  {(provided : any , snapshot : any) => (
+                    <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
                       {...provided.dragHandleProps}
-                      sx={{
-                        mb: 2,
-                        p: 2,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        backgroundColor: snapshot.isDragging ? 'lightblue' : 'white',
+                      className="field-card"
+                      style={{
+                        background: snapshot.isDragging ? "#e3f2fd" : "#fff",
+                        ...provided.draggableProps.style
                       }}
                     >
-                      {/* Field Label */}
-                      <TextField
-                        label="Field Label"
-                        size="small"
-                        sx={{ mb: 1, width: '100%' }}
+                      <input
+                        type="text"
+                        className="form-input"
                         value={field.label}
-                        onChange={e => updateField(field.id, 'label', e.target.value)}
-                        disabled={field.isDerived}
+                        onChange={e => updateField(field.id, "label", e.target.value)}
+                        placeholder="Field Label"
                       />
 
-                      {/* Required checkbox for non-derived */}
-                      {!field.isDerived && (
-                        <FormControlLabel
-                          sx={{ mb: 1 }}
-                          control={
-                            <Checkbox
-                              checked={field.required}
-                              onChange={e =>
-                                updateField(field.id, 'required', e.target.checked)
-                              }
-                            />
+                      <label style={{ marginLeft: 8 }}>
+                        Required:
+                        <input
+                          type="checkbox"
+                          checked={field.required}
+                          onChange={e =>
+                            updateField(field.id, "required", e.target.checked)
                           }
-                          label="Required"
+                        />
+                      </label>
+
+                      {field.fieldType !== "checkbox" && field.fieldType !== "radio" && (
+                        <input
+                          type="text"
+                          value={field.defaultValue || ""}
+                          onChange={e =>
+                            updateField(field.id, "defaultValue", e.target.value)
+                          }
+                          placeholder="Default Value"
+                          style={{ marginLeft: 8 }}
                         />
                       )}
 
-                      {/* Default Value - type dependent and read-only for derived */}
-                      {!field.isDerived && (
-                        <>
-                          {field.fieldType === 'text' && (
-                            <TextField
-                              label="Default Value"
-                              size="small"
-                              sx={{ mb: 1, width: '100%' }}
-                              value={field.defaultValue as string || ''}
-                              onChange={e =>
-                                updateField(field.id, 'defaultValue', e.target.value)
-                              }
-                            />
-                          )}
-                          {field.fieldType === 'number' && (
-                            <TextField
-                              label="Default Value"
-                              type="number"
-                              size="small"
-                              sx={{ mb: 1, width: '100%' }}
-                              value={field.defaultValue !== undefined ? field.defaultValue : ''}
-                              onChange={e =>
-                                updateField(
-                                  field.id,
-                                  'defaultValue',
-                                  e.target.value === '' ? '' : Number(e.target.value)
-                                )
-                              }
-                            />
-                          )}
-                          {field.fieldType === 'date' && (
-                            <TextField
-                              label="Default Value"
-                              type="date"
-                              size="small"
-                              sx={{ mb: 1, width: '100%' }}
-                              value={field.defaultValue as string || ''}
-                              onChange={e =>
-                                updateField(field.id, 'defaultValue', e.target.value)
-                              }
-                              InputLabelProps={{ shrink: true }}
-                            />
-                          )}
-                          {field.fieldType === 'checkbox' && (
-                            <FormControlLabel
-                              label="Default Checked"
-                              sx={{ mb: 1 }}
-                              control={
-                                <Checkbox
-                                  checked={Boolean(field.defaultValue)}
-                                  onChange={e =>
-                                    updateField(field.id, 'defaultValue', e.target.checked)
-                                  }
-                                  size="small"
-                                />
-                              }
-                            />
-                          )}
-                        </>
-                      )}
-                      {field.isDerived && (
-                        <TextField
-                          label="Computed Value"
-                          value={field.defaultValue?.toString() || ''}
-                          size="small"
-                          sx={{ mb: 1, width: '100%' }}
-                          InputProps={{ readOnly: true }}
+                      {field.fieldType === "radio" && (
+                        <input
+                          type="text"
+                          value={field.options?.join(", ") || ""}
+                          onChange={e =>
+                            updateField(
+                              field.id,
+                              "options",
+                              e.target.value.split(",").map(o => o.trim())
+                            )
+                          }
+                          placeholder="Options (comma separated)"
+                          style={{ marginLeft: 8 }}
                         />
                       )}
 
-                      {/* Validation UI (only for non-derived) */}
-                      {!field.isDerived && (
-                        <>
-                          {/* Text field validations */}
-                          {field.fieldType === 'text' && (
-                            <>
-                              <TextField
-                                label="Min Length"
-                                type="number"
-                                size="small"
-                                sx={{ mb: 1, width: '100%' }}
-                                value={field.validations?.minLength ?? ''}
-                                onChange={e =>
-                                  updateValidation(
-                                    field.id,
-                                    'minLength',
-                                    e.target.value === ''
-                                      ? undefined
-                                      : Number(e.target.value)
-                                  )
-                                }
-                                inputProps={{ min: 0 }}
-                              />
-                              <TextField
-                                label="Max Length"
-                                type="number"
-                                size="small"
-                                sx={{ mb: 1, width: '100%' }}
-                                value={field.validations?.maxLength ?? ''}
-                                onChange={e =>
-                                  updateValidation(
-                                    field.id,
-                                    'maxLength',
-                                    e.target.value === ''
-                                      ? undefined
-                                      : Number(e.target.value)
-                                  )
-                                }
-                                inputProps={{ min: 0 }}
-                              />
-                              <FormControlLabel
-                                sx={{ mb: 1 }}
-                                control={
-                                  <Checkbox
-                                    checked={field.validations?.isEmail || false}
-                                    onChange={e =>
-                                      updateValidation(field.id, 'isEmail', e.target.checked)
-                                    }
-                                    size="small"
-                                  />
-                                }
-                                label="Validate as Email"
-                              />
-                              <FormControlLabel
-                                sx={{ mb: 1 }}
-                                control={
-                                  <Checkbox
-                                    checked={field.validations?.isPasswordRule || false}
-                                    onChange={e =>
-                                      updateValidation(field.id, 'isPasswordRule', e.target.checked)
-                                    }
-                                    size="small"
-                                  />
-                                }
-                                label="Custom Password Rule (Min 8 chars, must contain a number)"
-                              />
-                            </>
-                          )}
-
-                          {/* Number validations */}
-                          {field.fieldType === 'number' && (
-                            <>
-                              <TextField
-                                label="Min Value"
-                                type="number"
-                                size="small"
-                                sx={{ mb: 1, width: '100%' }}
-                                value={field.validations?.min ?? ''}
-                                onChange={e =>
-                                  updateValidation(
-                                    field.id,
-                                    'min',
-                                    e.target.value === '' ? undefined : Number(e.target.value)
-                                  )
-                                }
-                              />
-                              <TextField
-                                label="Max Value"
-                                type="number"
-                                size="small"
-                                sx={{ mb: 1, width: '100%' }}
-                                value={field.validations?.max ?? ''}
-                                onChange={e =>
-                                  updateValidation(
-                                    field.id,
-                                    'max',
-                                    e.target.value === '' ? undefined : Number(e.target.value)
-                                  )
-                                }
-                              />
-                            </>
-                          )}
-
-                          {/* Date validations */}
-                          {field.fieldType === 'date' && (
-                            <>
-                              <TextField
-                                label="Min Date"
-                                type="date"
-                                size="small"
-                                sx={{ mb: 1, width: '100%' }}
-                                value={field.validations?.min ?? ''}
-                                onChange={e =>
-                                  updateValidation(field.id, 'min', e.target.value || undefined)
-                                }
-                                InputLabelProps={{ shrink: true }}
-                              />
-                              <TextField
-                                label="Max Date"
-                                type="date"
-                                size="small"
-                                sx={{ mb: 1, width: '100%' }}
-                                value={field.validations?.max ?? ''}
-                                onChange={e =>
-                                  updateValidation(field.id, 'max', e.target.value || undefined)
-                                }
-                                InputLabelProps={{ shrink: true }}
-                              />
-                            </>
-                          )}
-                        </>
+                      {field.fieldType === "text" && (
+                        <select
+                          value={field.fieldSubtype || ""}
+                          onChange={e =>
+                            updateField(field.id, "fieldSubtype", e.target.value || undefined)
+                          }
+                          style={{ marginLeft: 8 }}
+                        >
+                          <option value="">Normal</option>
+                          <option value="email">Email</option>
+                          <option value="password">Password</option>
+                        </select>
                       )}
 
-                      {/* Derived Field specific UI */}
-                      {field.isDerived && (
+                      {["text", "textarea", "password", "email"].includes(
+                        field.fieldSubtype || field.fieldType
+                      ) && (
                         <>
-                          <Autocomplete
-                            multiple
-                            options={parentFieldOptions}
-                            getOptionLabel={(opt) => opt.label}
-                            value={field.parentFieldIds
-                              ? parentFieldOptions.filter((opt) =>
-                                field.parentFieldIds!.includes(opt.id))
-                              : []}
-                            onChange={(_, newParents) =>
-                              updateParentFields(
+                          <input
+                            type="number"
+                            placeholder="Min Len"
+                            value={field.minLength ?? ""}
+                            onChange={e =>
+                              updateField(
                                 field.id,
-                                newParents.map((f) => f.id)
+                                "minLength",
+                                e.target.value ? parseInt(e.target.value) : undefined
                               )
                             }
-                            renderInput={(params) => (
-                              <TextField
-                                {...params}
-                                size="small"
-                                label="Select Parent Fields"
-                                sx={{ mb: 1, width: '100%' }}
-                              />
-                            )}
+                            style={{ width: 80, marginLeft: 8 }}
                           />
-                          <TextField
-                            label="Formula"
-                            multiline
-                            minRows={2}
-                            size="small"
-                            sx={{ mb: 1, width: '100%' }}
-                            value={field.formula || ''}
-                            placeholder={`Example: parentId1 + parentId2 * 2`}
-                            onChange={e => updateFormula(field.id, e.target.value)}
+                          <input
+                            type="number"
+                            placeholder="Max Len"
+                            value={field.maxLength ?? ""}
+                            onChange={e =>
+                              updateField(
+                                field.id,
+                                "maxLength",
+                                e.target.value ? parseInt(e.target.value) : undefined
+                              )
+                            }
+                            style={{ width: 80, marginLeft: 4 }}
                           />
-                          <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
-                            Use parent field IDs in formula. e.g: <br />
-                            <code>fieldId1 + fieldId2 * 2</code> <br />
-                            For dates: Use timestamps (ms). <code>floor((now - fieldId) / (365.25*24*3600*1000))</code> to calculate age.
-                          </Typography>
                         </>
                       )}
 
-                      {/* Type display and Delete */}
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Type: {field.fieldType}
-                        </Typography>
-                        <IconButton
-                          aria-label="delete"
-                          color="error"
-                          onClick={() => deleteField(field.id)}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </Box>
-                    </Paper>
+                      <button
+                        onClick={() => deleteField(field.id)}
+                        className="btn btn-danger"
+                        style={{ marginLeft: 8 }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   )}
                 </Draggable>
               ))}
@@ -595,28 +300,36 @@ useEffect(() => {
         </Droppable>
       </DragDropContext>
 
-      <Button variant="contained" color="primary" onClick={saveForm}>
-        Save Form
-      </Button>
+      {/* Save */}
+      <button onClick={saveFormHandler} className="save-btn">
+        💾 Save Form
+      </button>
 
-      <Dialog open={showSuccessDialog} onClose={handleCloseDialog}>
-        <DialogTitle>Form Saved Successfully</DialogTitle>
-        <DialogContent dividers>
-          <Typography>
-            Your form {formName} has been saved successfully.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Close</Button>
-          <Link to={`/preview/${formId}`}>
-          <Button variant="contained">
-            Preview Form
-          </Button>
-          </Link>
-        </DialogActions>
-      </Dialog>
-
-    </Container>
+      {/* Success Dialog */}
+      {showSuccessDialog && (
+        <div className="dialog-overlay">
+          <div className="dialog-box">
+            <h3>✅ Form Created Successfully!</h3>
+            <p><strong>Name:</strong> {formName}</p>
+            <div style={{ marginTop: 10 }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => navigate(`/preview/${createdFormId}`)}
+                style={{ marginRight: 8 }}
+              >
+                Preview
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => setShowSuccessDialog(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

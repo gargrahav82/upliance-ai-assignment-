@@ -14,7 +14,7 @@ const features = [
     icon: <Preview color="primary" sx={{ fontSize: 40 }} />,
     title: 'Preview Forms',
     description: 'Interact with your forms as an end user to test validations and behaviors.',
-    route: '/preview',
+    route: '/myforms',
   },
   {
     icon: <Description color="primary" sx={{ fontSize: 40 }} />,
